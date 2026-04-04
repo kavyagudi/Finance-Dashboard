@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Finance Dashboard</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body { margin:0; font-family:Arial; background:#f5f7fb; }
+.dark { background:#111827; color:white; }
+
+/* Layout */
+.container { display:flex; }
+.sidebar { width:220px; background:#1f2937; color:white; height:100vh; padding:20px; }
+.sidebar a { display:block; margin:10px 0; cursor:pointer; }
+.main { flex:1; padding:20px; }
+
+.section{display:none;}
+.active{display:block;}
+
+/* Cards */
+.cards { display:grid; gap:15px; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); }
+.card { padding:20px; border-radius:10px; color:white; }
+.balance{background:#3b82f6;} 
+.income{background:#22c55e;} 
+.expense{background:#ef4444;}
+
+/* Table */
+table { width:100%; margin-top:20px; border-collapse:collapse; background:white; }
+th {
+  background:linear-gradient(to right,#3b82f6,#6366f1);
+  color:white; padding:10px;
+}
+.dark th { background:#1e40af; }
+td { padding:10px; border:1px solid #ddd; text-align:center; }
+
+.dark table { background:#1f2937; color:white; }
+.dark td { border:1px solid #4b5563; }
+
+input,select,button{ padding:8px; margin:5px; }
+
+/* Insights */
+.insights {
+  background:#3b82f6;
+  color:white;
+  padding:15px;
+  border-radius:10px;
+}
+</style>
+</head>
+
+<body>
+
+<div style="background:#111827;color:white;padding:15px;display:flex;justify-content:space-between;">
+  <h3>Finance Dashboard</h3>
+  <div>
+    Role:
+    <select id="role" onchange="switchRole()">
+      <option value="admin">Admin</option>
+      <option value="viewer">Viewer</option>
+    </select>
+    <button onclick="toggleDark()">🌙</button>
+  </div>
+</div>
+
+<div class="container">
+
+<div class="sidebar">
+  <a onclick="showSection('dashboard')">Dashboard</a>
+  <a onclick="showSection('transactions')">Transactions</a>
+  <a onclick="showSection('graphs')">Graphs</a>
+  <a onclick="showSection('insights')">Insights</a>
+</div>
+
+<div class="main">
+
+<!-- Dashboard -->
+<div id="dashboard" class="section active">
+  <div class="cards">
+    <div class="card balance">Balance ₹<span id="balance"></span></div>
+    <div class="card income">Income ₹<span id="income"></span></div>
+    <div class="card expense">Expense ₹<span id="expense"></span></div>
+  </div>
+  <canvas id="balanceTrend"></canvas>
+</div>
+
+<!-- Transactions -->
+<div id="transactions" class="section">
+
+<input type="text" id="search" placeholder="Search category..." onkeyup="searchData()">
+
+<select onchange="filterData()" id="filterType">
+  <option value="all">All</option>
+  <option value="credit">Income</option>
+  <option value="debit">Expense</option>
+</select>
+
+<button onclick="clearAllData()" id="clearBtn">Clear All</button>
+<button onclick="exportCSV()">Export CSV</button>
+
+<br>
+
+<input type="date" id="date">
+<input type="number" id="amount" placeholder="Amount">
+
+<select id="category">
+  <option value="">Select Category</option>
+  <option>Salary</option>
+  <option>Food</option>
+  <option>Shopping</option>
+  <option>Transport</option>
+  <option>Others</option>
+</select>
+
+<select id="type">
+  <option value="credit">Income</option>
+  <option value="debit">Expense</option>
+</select>
+
+<button onclick="addTransaction()" id="addBtn">Add</button>
+
+<table>
+<thead>
+<tr>
+<th>Date</th>
+<th>Amount</th>
+<th>Category</th>
+<th>Type</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody id="tableBody"></tbody>
+</table>
+
+</div>
+
+<!-- Graphs -->
+<div id="graphs" class="section">
+<h3>Category Bar Chart</h3>
+<canvas id="categoryChart"></canvas>
+
+<h3>Category Pie Chart</h3>
+<canvas id="pieChart"></canvas>
+</div>
+
+<!-- Insights -->
+<div id="insights" class="section">
+<h3>Insights</h3>
+<div id="insightContent" class="insights"></div>
+</div>
+
+</div>
+</div>
+
+<script>
+
+/* Load */
+let data = JSON.parse(localStorage.getItem("financeData")) || [];
+
+/* ✅ Default Data */
+if (data.length === 0) {
+  data = [
+    { date: "2026-04-01", amount: 5000, category: "Salary", type: "credit" },
+    { date: "2026-04-02", amount: 250, category: "Food", type: "debit" },
+    { date: "2026-04-03", amount: 1200, category: "Shopping", type: "debit" },
+    { date: "2026-04-04", amount: 300, category: "Transport", type: "debit" },
+    { date: "2026-04-05", amount: 2000, category: "Salary", type: "credit" }
+  ];
+  localStorage.setItem("financeData", JSON.stringify(data));
+}
+
+let role = localStorage.getItem("role") || "admin";
+
+/* LOAD */
+function loadData(){
+  tableBody.innerHTML="";
+  let inc=0, exp=0;
+
+  data.forEach((d,i)=>{
+    tableBody.innerHTML+=`
+    <tr>
+      <td>${d.date}</td>
+      <td>₹${d.amount}</td>
+      <td>${d.category}</td>
+      <td>${d.type}</td>
+      <td>
+        <button onclick="editRow(${i})">✏️</button>
+        <button onclick="deleteRow(${i})">🗑️</button>
+      </td>
+    </tr>`;
+
+    d.type==="credit"?inc+=d.amount:exp+=d.amount;
+  });
+
+  income.innerText=inc;
+  expense.innerText=exp;
+  balance.innerText=inc-exp;
+
+  drawCharts();
+}
+
+/* ADD */
+function addTransaction(){
+  if(role!=="admin"){ alert("Viewer cannot add"); return; }
+
+  let d=date.value,a=amount.value,c=category.value,t=type.value;
+
+  if(!d||!a||!c){ alert("Fill all fields"); return; }
+
+  data.push({date:d,amount:+a,category:c,type:t});
+  localStorage.setItem("financeData",JSON.stringify(data));
+
+  loadData();
+}
+
+/* EDIT */
+function editRow(i){
+  let d=data[i];
+  date.value=d.date;
+  amount.value=d.amount;
+  category.value=d.category;
+  type.value=d.type;
+
+  data.splice(i,1);
+  localStorage.setItem("financeData",JSON.stringify(data));
+  loadData();
+}
+
+/* DELETE */
+function deleteRow(i){
+  if(confirm("Delete this transaction?")){
+    data.splice(i,1);
+    localStorage.setItem("financeData",JSON.stringify(data));
+    loadData();
+  }
+}
+
+/* FILTER */
+function filterData(){
+  let type=filterType.value;
+  tableBody.innerHTML="";
+
+  data.filter(d=>type==="all"||d.type===type)
+  .forEach(d=>{
+    tableBody.innerHTML+=`
+    <tr>
+      <td>${d.date}</td>
+      <td>₹${d.amount}</td>
+      <td>${d.category}</td>
+      <td>${d.type}</td>
+    </tr>`;
+  });
+}
+
+/* SEARCH */
+function searchData(){
+  let val=search.value.toLowerCase();
+  tableBody.innerHTML="";
+
+  data.filter(d=>d.category.toLowerCase().includes(val))
+  .forEach(d=>{
+    tableBody.innerHTML+=`
+    <tr>
+      <td>${d.date}</td>
+      <td>₹${d.amount}</td>
+      <td>${d.category}</td>
+      <td>${d.type}</td>
+    </tr>`;
+  });
+}
+
+/* ROLE */
+function switchRole(){
+  role=document.getElementById("role").value;
+  localStorage.setItem("role",role);
+
+  addBtn.style.display = role==="admin"?"inline":"none";
+  clearBtn.style.display = role==="admin"?"inline":"none";
+}
+
+/* CLEAR */
+function clearAllData(){
+  if(role!=="admin") return;
+  data=[];
+  localStorage.clear();
+  loadData();
+}
+
+/* EXPORT */
+function exportCSV(){
+  let csv="Date,Amount,Category,Type\n";
+  data.forEach(d=>{
+    csv+=`${d.date},${d.amount},${d.category},${d.type}\n`;
+  });
+
+  let blob=new Blob([csv]);
+  let a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="finance.csv";
+  a.click();
+}
+
+/* CHARTS */
+let chart,pie;
+function drawCharts(){
+  let cat={};
+  data.forEach(d=>{cat[d.category]=(cat[d.category]||0)+d.amount;});
+
+  let ctx=document.getElementById("categoryChart");
+  if(chart) chart.destroy();
+  chart=new Chart(ctx,{
+    type:"bar",
+    data:{labels:Object.keys(cat),
+    datasets:[{data:Object.values(cat),backgroundColor:"#6366f1"}]}
+  });
+
+  let ctx2=document.getElementById("pieChart");
+  if(pie) pie.destroy();
+  pie=new Chart(ctx2,{
+    type:"pie",
+    data:{labels:Object.keys(cat),
+    datasets:[{data:Object.values(cat)}]}
+  });
+
+  drawTrend();
+}
+
+/* LINE */
+let trend;
+function drawTrend(){
+  let sorted=[...data].sort((a,b)=>new Date(a.date)-new Date(b.date));
+  let bal=0,l=[],v=[];
+
+  sorted.forEach(d=>{
+    bal+=d.type==="credit"?d.amount:-d.amount;
+    l.push(d.date);
+    v.push(bal);
+  });
+
+  let ctx=document.getElementById("balanceTrend");
+  if(trend) trend.destroy();
+  trend=new Chart(ctx,{type:"line",data:{labels:l,datasets:[{data:v}]}} );
+}
+
+/* INSIGHTS */
+function showInsights(){
+  let cat={};
+  data.forEach(d=>{
+    if(d.type==="debit"){
+      cat[d.category]=(cat[d.category]||0)+d.amount;
+    }
+  });
+
+  let max=Object.keys(cat)[0] || "-";
+  insightContent.innerText="Top Spending: "+max;
+}
+
+/* NAV */
+function showSection(id){
+  document.querySelectorAll(".section").forEach(s=>s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+  showInsights();
+}
+
+function toggleDark(){ document.body.classList.toggle("dark"); }
+
+window.onload=()=>{
+  document.getElementById("role").value=role;
+  switchRole();
+  loadData();
+  showInsights();
+};
+
+</script>
+
+</body>
+</html>
